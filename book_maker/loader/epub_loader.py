@@ -55,7 +55,7 @@ class EPUBBookLoader(BaseBookLoader):
         )
         self.is_test = is_test
         self.test_num = test_num
-        self.translate_tags = "p"
+        self.translate_tags = "h1,h2,h3,h4,h5,h6,p"
         self.exclude_translate_tags = "sup,code"
         self.allow_navigable_strings = False
         self.accumulated_num = 1

@@ -226,9 +226,18 @@ class Gemini(Base):
     def _translate_with_retry(self, text: str, paragraph_num: str | None) -> str:
         """Internal translation method with tenacity retry logic."""
         try:
+            # Pre-process: add word replacements here if needed
+            # Example: clean_text = text.replace("WORD_Example_word", "REPLACEMENT_example_word")
+            clean_text = text
+            
             response = self.convo.send_message(
-                self.prompt.format(text=text, language=self.language)
+                self.prompt.format(text=clean_text, language=self.language)
             )
+            # Guard against None response (model returned empty completion)
+            if response.text is None:
+                print(f"\n[!] Gemini refused to translate this sentence: \"{text[:200]}\"")
+                raise ValueError("Gemini returned empty response (None). Retrying...")
+
             t_text = self._extract_translation_text(response.text)
 
             # Restore paragraph number if present
@@ -269,8 +278,8 @@ class Gemini(Base):
                 self._fatal_error_detected = True
                 print(f"Translation disabled due to fatal error: {e}")
             else:
-                print(f"Translation failed after all retry attempts: {e}")
-            return self.TRANSLATION_ERROR_MARKER
+                print(f"Translation failed after all retry attempts. Keeping original text. Error:   {e}")
+            return text
 
     _available_models_cache = None
 
@@ -358,6 +367,11 @@ class Gemini(Base):
                 ),
             )
 
+            # Guard against None response (model returned empty completion)
+            if response.text is None:
+                print(f"[!] Gemini refused to translate this BATCH (safety filter).")
+                raise ValueError("Gemini returned empty response (None). Retrying...")
+
             result = self._parse_batch_response(response.text, batch_size)
             if result:
                 self._manage_conversation_history()
@@ -399,7 +413,11 @@ class Gemini(Base):
                 f"field containing exactly {batch_size} translated texts in order."
             )
 
-        result = self._batch_translate_with_retry(prompt, batch_size)
+        try:
+            result = self._batch_translate_with_retry(prompt, batch_size)
+        except Exception as e:
+            print(f"Batch translation failed after all retries: {e}")
+            result = None
 
         # Check again after retry attempt (error may have been detected during retries)
         if self._fatal_error_detected:
@@ -424,7 +442,7 @@ class Gemini(Base):
                 remaining = len(text_list) - len(translations)
                 translations.extend([self.TRANSLATION_ERROR_MARKER] * remaining)
                 break
-            translations.append(t if t else self.TRANSLATION_ERROR_MARKER)
+            translations.append(t if t else text)
 
         return translations
 
